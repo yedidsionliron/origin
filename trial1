@@ -1,0 +1,60 @@
+import numpy as np
+from typing import List, Any
+
+
+class MatrixSorter:
+    """Sort a 3‑D matrix along any axis by transposing and vectorized sorting.
+
+    Internally the matrix is stored as a NumPy array.  The public method
+    `sort_by_dimension` simply moves the requested axis to the front, performs
+    an `np.sort` along axis‑0, and then re‑transposes back.
+
+    Attributes:
+        matrix (np.ndarray): underlying 3D array
+    """
+
+    def __init__(self, matrix: List[List[List[Any]]]):
+        arr = np.array(matrix)
+        if arr.ndim != 3:
+            raise ValueError("Input must be a 3-dimensional sequence")
+        self.matrix = arr
+
+    def sort_by_dimension(self, dim: int) -> None:
+        """In-place sort along the requested dimension (0, 1 or 2).
+
+        The implementation uses a single call to ``np.sort`` by first moving the
+        chosen axis to axis 0, sorting, and then moving axes back to their
+        original order.  This eliminates explicit `if`/`elif` branches.
+
+        Args:
+            dim: axis index to sort (0, 1, or 2)
+        """
+        if dim not in (0, 1, 2):
+            raise ValueError("Dimension must be 0, 1 or 2.")
+
+        # bring the target dimension to the front, sort along axis 0, then
+        # restore the original axis order
+        perm = [dim] + [i for i in range(3) if i != dim]
+        inv_perm = np.argsort(perm)
+        transposed = np.transpose(self.matrix, perm)
+        sorted_first = np.sort(transposed, axis=0)
+        self.matrix = np.transpose(sorted_first, inv_perm)
+
+
+if __name__ == "__main__":
+    # simple demonstration
+    mat = [
+        [[3, 1, 2], [6, 5, 4]],
+        [[9, 7, 8], [0, -1, -2]],
+    ]
+    sorter = MatrixSorter(mat)
+    print("Original:\n", sorter.matrix)
+
+    sorter.sort_by_dimension(2)
+    print("After sorting dim=2 (each row):\n", sorter.matrix)
+
+    sorter.sort_by_dimension(1)
+    print("After sorting dim=1 (each layer's rows):\n", sorter.matrix)
+
+    sorter.sort_by_dimension(0)
+    print("After sorting dim=0 (layers sorted):\n", sorter.matrix)

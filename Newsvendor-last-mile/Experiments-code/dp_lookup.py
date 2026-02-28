@@ -1,13 +1,13 @@
-"""DP lookup-table approximation using XGBoost regressors.
+"""DP lookup-table approximation using gradient-boosted tree regressors.
 
 This module implements a finite-horizon dynamic programming approximator
-where value functions are represented by boosted tree regressors.  It is
-structured according to the project's global coding guidelines:
+where value functions are represented by gradient-boosted tree regressors.
+It is structured according to the project's global coding guidelines:
 
 - object-oriented design (single class `DPXGBoostApproximator`)
 - vectorized operations via NumPy / pandas
 - self-contained in one file
-- minimal external dependencies (xgboost, numpy, pandas)
+- minimal external dependencies (scikit-learn, numpy, pandas)
 
 The main class can be used to sequentially fit models $f_t$ that approximate
 $G_t(s)$ at each time step.  A small runnable demonstration and a basic
@@ -19,7 +19,7 @@ from typing import Any, Callable, List, Optional
 
 import numpy as np
 import pandas as pd
-from xgboost import XGBRegressor
+from sklearn.ensemble import GradientBoostingRegressor
 
 
 class DPXGBoostApproximator:
@@ -50,8 +50,8 @@ class DPXGBoostApproximator:
         self.action_space = action_space
         self.reward_fn = reward_fn
         self.transition_fn = transition_fn
-        self.models: List[XGBRegressor] = []
-        self.model_params = model_params or {"objective": "reg:squarederror"}
+        self.models: List[GradientBoostingRegressor] = []
+        self.model_params = model_params or {}
 
     def fit(self, state_samples: np.ndarray) -> None:
         """Fit a separate regressor at each time step.
@@ -82,7 +82,7 @@ class DPXGBoostApproximator:
                 targets[i] = best
 
             # fit model for step t
-            model = XGBRegressor(**self.model_params)
+            model = GradientBoostingRegressor(**self.model_params)
             model.fit(state_samples, targets)
             self.models.insert(0, model)  # prepend so index corresponds to t
             next_values = targets.copy()

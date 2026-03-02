@@ -1,0 +1,25 @@
+name: Treasury Yield Monitor
+
+on:
+  schedule:
+    - cron: '0 15 * * 1-5'  # 15:00 UTC Mon-Fri (10am EST / 11am EDT)
+  workflow_dispatch:         # Allow manual runs from GitHub UI
+
+jobs:
+  check-yield:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r Treasury-monitor/requirements.txt
+
+      - name: Run treasury monitor
+        env:
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+        run: python Treasury-monitor/treasury_monitor.py

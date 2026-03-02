@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m pytest ../../tests/test_main_experiments.py -v)",
+      "Bash(pip install pytest -q)"
+    ]
+  }
+}

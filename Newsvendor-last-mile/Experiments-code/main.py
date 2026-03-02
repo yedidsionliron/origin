@@ -62,7 +62,6 @@ class NewsvendorDPApproximator:
         capacity_limit: Maximum inventory capacity (L).
         u_values: Per-location u-factors.
         num_locations: Number of delivery locations (k).
-        block_size: Decision granularity — n0 steps.
         random_seed: Seed for reproducible state sampling during fit.
     """
 
@@ -74,14 +73,12 @@ class NewsvendorDPApproximator:
         capacity_limit: int,
         u_values: List[float],
         num_locations: int,
-        block_size: int = 8,
         random_seed: int = 10,
     ) -> None:
         self.problem = problem
         self.capacity_limit = capacity_limit
         self.u_values = u_values
         self.num_locations = num_locations
-        self.block_size = block_size
         self.random_seed = random_seed
 
         # Aggregation parameters (replicates clp_adp.ADP)
@@ -91,7 +88,8 @@ class NewsvendorDPApproximator:
         self._f = 1.1
         self._current_t: int = 0  # updated before each backward-induction step
 
-        action_space = list(range(block_size, capacity_limit + 1, block_size))
+        # Granularity of 1: approximator evaluates every integer n0, no coarsening needed
+        action_space = list(range(1, capacity_limit + 1))
         self._approx = DPXGBoostApproximator(
             horizon=problem.end_of_horizon,
             action_space=action_space,
@@ -202,7 +200,7 @@ class NewsvendorDPApproximator:
         for t in range(approx.horizon):
             self._current_t = t
             ll_curr = s[3]
-            best_n0, best_val = self.block_size, -np.inf
+            best_n0, best_val = 1, -np.inf
 
             for n0 in approx.action_space:
                 if n0 > ll_curr:
@@ -252,7 +250,6 @@ def _worker_volume(
     n_t_initial: int,
     u_tilde_initial: float,
     initial_states: tuple,
-    block_size: int,
     random_seed: int,
     v: float,
     i: int,
@@ -269,7 +266,7 @@ def _worker_volume(
     cost_greedy = problem.get_expected_cost(greedy_policy, initial_states)
 
     approx = NewsvendorDPApproximator(
-        problem, capacity_limit, u_values, num_locations, block_size, random_seed
+        problem, capacity_limit, u_values, num_locations, random_seed
     )
     t0 = time.time()
     approx.fit()
@@ -279,7 +276,7 @@ def _worker_volume(
 
     return [
         {'algorithm': 'Greedy', 'runtime': rt_greedy, 'cost': 1, 'v': v, 'i': i},
-        {'algorithm': f'ECA_{block_size}', 'runtime': rt_adp,
+        {'algorithm': 'ECA', 'runtime': rt_adp,
          'cost': cost_adp / cost_greedy, 'v': v, 'i': i},
     ]
 
@@ -300,12 +297,11 @@ def _worker_u_variability(
     n_t_initial: int,
     u_tilde_initial: float,
     initial_states: tuple,
-    block_size: int,
     random_seed: int,
     u_inc: float,
     i: int,
 ) -> List[dict]:
-    """Run one (u_increment, iteration) pair; return Greedy + XGB-DP (B=2/4/8) rows."""
+    """Run one (u_increment, iteration) pair; return Greedy + XGB-DP rows."""
     problem = Problem(
         distribution_type, num_locations, capacity_limit, planning_horizon,
         demands, demand_stds, availability_factors, u_values,
@@ -316,25 +312,21 @@ def _worker_u_variability(
     rt_greedy = time.time() - t0
     cost_greedy = problem.get_expected_cost(greedy_policy, initial_states)
 
-    rows = [
+    approx = NewsvendorDPApproximator(
+        problem, capacity_limit, u_values, num_locations, random_seed
+    )
+    t0 = time.time()
+    approx.fit()
+    adp_policy = approx.get_policy(n_ut_initial, n_t_initial, u_tilde_initial, problem.L)
+    rt_adp = time.time() - t0
+    cost_adp = problem.get_expected_cost(adp_policy, initial_states)
+
+    return [
         {'algorithm': 'Greedy', 'runtime': rt_greedy, 'cost': 1,
          'u_increment': u_inc, 'i': i},
+        {'algorithm': 'ECA', 'runtime': rt_adp,
+         'cost': cost_adp / cost_greedy, 'u_increment': u_inc, 'i': i},
     ]
-    for block_exp in range(1, 4):
-        bs = 2 ** block_exp
-        approx = NewsvendorDPApproximator(
-            problem, capacity_limit, u_values, num_locations, bs, random_seed
-        )
-        t0 = time.time()
-        approx.fit()
-        adp_policy = approx.get_policy(n_ut_initial, n_t_initial, u_tilde_initial, problem.L)
-        rt_adp = time.time() - t0
-        cost_adp = problem.get_expected_cost(adp_policy, initial_states)
-        rows.append({
-            'algorithm': f'ECA_{bs}', 'runtime': rt_adp,
-            'cost': cost_adp / cost_greedy, 'u_increment': u_inc, 'i': i,
-        })
-    return rows
 
 
 def _worker_a_variability(
@@ -353,7 +345,6 @@ def _worker_a_variability(
     n_t_initial: int,
     u_tilde_initial: float,
     initial_states: tuple,
-    block_size: int,
     random_seed: int,
     a_range: float,
     i: int,
@@ -369,25 +360,21 @@ def _worker_a_variability(
     rt_greedy = time.time() - t0
     cost_greedy = problem.get_expected_cost(greedy_policy, initial_states)
 
-    rows = [
+    approx = NewsvendorDPApproximator(
+        problem, capacity_limit, u_values, num_locations, random_seed
+    )
+    t0 = time.time()
+    approx.fit()
+    adp_policy = approx.get_policy(n_ut_initial, n_t_initial, u_tilde_initial, problem.L)
+    rt_adp = time.time() - t0
+    cost_adp = problem.get_expected_cost(adp_policy, initial_states)
+
+    return [
         {'algorithm': 'Greedy', 'runtime': rt_greedy, 'cost': 1,
          'a_range': a_range, 'i': i},
+        {'algorithm': 'ECA', 'runtime': rt_adp,
+         'cost': cost_adp / cost_greedy, 'a_range': a_range, 'i': i},
     ]
-    for block_exp in range(1, 4):
-        bs = 2 ** block_exp
-        approx = NewsvendorDPApproximator(
-            problem, capacity_limit, u_values, num_locations, bs, random_seed
-        )
-        t0 = time.time()
-        approx.fit()
-        adp_policy = approx.get_policy(n_ut_initial, n_t_initial, u_tilde_initial, problem.L)
-        rt_adp = time.time() - t0
-        cost_adp = problem.get_expected_cost(adp_policy, initial_states)
-        rows.append({
-            'algorithm': f'ECA_{bs}', 'runtime': rt_adp,
-            'cost': cost_adp / cost_greedy, 'a_range': a_range, 'i': i,
-        })
-    return rows
 
 
 # ============================================================================
@@ -524,7 +511,7 @@ class ExperimentRunner:
         cost = problem.get_expected_cost(greedy_policy, self.config.initial_states)
         return cost, execution_time
 
-    def _run_adp(self, problem: Problem, block_size: int) -> Tuple[float, float]:
+    def _run_adp(self, problem: Problem) -> Tuple[float, float]:
         """
         Fit NewsvendorDPApproximator and extract a greedy policy.
 
@@ -537,7 +524,7 @@ class ExperimentRunner:
         cfg = self.config
         approx = NewsvendorDPApproximator(
             problem, cfg.capacity_limit, cfg.u_values,
-            cfg.num_locations, block_size, cfg.random_seed,
+            cfg.num_locations, cfg.random_seed,
         )
         start_time = time.time()
         approx.fit(cfg.n_fit_samples)
@@ -622,7 +609,6 @@ class ExperimentRunner:
                         _worker_volume,
                         demand_arrays[(v, i)],
                         **base_kwargs,
-                        block_size=8,
                         v=v,
                         i=i,
                     ))
@@ -633,36 +619,6 @@ class ExperimentRunner:
 
         logger.info('Volume variability test complete')
         return pd.DataFrame(rows, columns=['algorithm', 'runtime', 'cost', 'v', 'i'])
-
-    def run_block_size(self) -> pd.DataFrame:
-        """
-        Test algorithm performance across varying block sizes (2^1 to 2^6).
-
-        Uses fixed demand means; each block size is evaluated once on the same
-        Problem — no parallelism needed.
-
-        Returns:
-            DataFrame with columns ['algorithm', 'runtime', 'cost', 'B'].
-        """
-        cfg = self.config
-        np.random.seed(cfg.random_seed)
-        problem = self._make_problem(np.array(cfg.demand_means, dtype=float))
-        rows: List[dict] = []
-
-        cost_greedy, rt_greedy = self._run_greedy(problem)
-        rows.append({'algorithm': 'Greedy', 'runtime': rt_greedy, 'cost': 1, 'B': np.nan})
-
-        for block_exp in range(1, 7):
-            block_size = 2 ** block_exp
-            logger.info(f'Testing block size: {block_size}')
-            cost, rt = self._run_adp(problem, block_size)
-            rows.append({
-                'algorithm': 'ECA', 'runtime': rt,
-                'cost': cost / cost_greedy, 'B': block_size,
-            })
-
-        logger.info('Block size test complete')
-        return pd.DataFrame(rows, columns=['algorithm', 'runtime', 'cost', 'B'])
 
     def run_u_variability(
         self,
@@ -710,7 +666,6 @@ class ExperimentRunner:
                         _worker_u_variability,
                         demand_arrays[(u_inc, i)],
                         **base_kwargs,
-                        block_size=8,
                         u_inc=u_inc,
                         i=i,
                     ))
@@ -770,7 +725,6 @@ class ExperimentRunner:
                         _worker_a_variability,
                         demand_arrays[(a_range, i)],
                         **base_kwargs,
-                        block_size=8,
                         a_range=a_range,
                         i=i,
                     ))
@@ -818,16 +772,15 @@ class ExperimentRunner:
         logger.info(f'Execution time: {runtime:.4f}s')
         logger.info(f'Expected cost: {cost_greedy:.2f}\n')
 
-        # XGB-DP with different block sizes
-        for block_size in [2, 4, 8]:
-            logger.info(f'XGB-DP Approximator - Block Size {block_size}:')
-            logger.info('=' * 40)
-            cost, runtime = self._run_adp(problem, block_size)
-            logger.info(f'Execution time (fit + rollout): {runtime:.4f}s')
-            logger.info(f'Actual cost: {cost:.2f}\n')
+        # XGB-DP approximator
+        logger.info('XGB-DP Approximator:')
+        logger.info('=' * 40)
+        cost, runtime = self._run_adp(problem)
+        logger.info(f'Execution time (fit + rollout): {runtime:.4f}s')
+        logger.info(f'Actual cost: {cost:.2f}\n')
 
         # Varying capacity limits
-        logger.info('Varying Capacity Limits (Block Size 8):')
+        logger.info('Varying Capacity Limits:')
         logger.info('=' * 40)
         for limit in [32, 64, 128]:
             logger.info(f'Capacity Limit: {limit}')
@@ -837,7 +790,7 @@ class ExperimentRunner:
                 cost_underage=cost_underage_amazon,
                 cost_overage=cost_overage_amazon,
             )
-            cost, runtime = self._run_adp(problem_limited, 8)
+            cost, runtime = self._run_adp(problem_limited)
             logger.info(f'  Execution time: {runtime:.4f}s')
             logger.info(f'  Actual cost: {cost:.2f}\n')
 
@@ -851,7 +804,6 @@ if __name__ == '__main__':
     results.to_csv('test_volume_variability.csv', index=False)
 
     # Uncomment to run other experiments:
-    # runner.run_block_size().to_csv('test_block_size.csv', index=False)
     # runner.run_u_variability().to_csv('test_u_variability.csv', index=False)
     # runner.run_a_variability().to_csv('test_a_variability.csv', index=False)
     # runner.run_amazon_showcase()

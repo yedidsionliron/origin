@@ -1,0 +1,10 @@
+treasury:
+  threshold: 4.5  # Alert when 10Y yield drops below this percentage
+  ticker: "^TNX"   # CBOE 10-Year Treasury Note Yield Index
+
+email:
+  sender: "yedidsion.liron@gmail.com"
+  recipient: "yedidsion.liron@gmail.com"
+  smtp_host: "smtp.gmail.com"
+  smtp_port: 587
+  # Password: set env var SMTP_PASSWORD — do NOT store it here

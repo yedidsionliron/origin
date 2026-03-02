@@ -1,5 +1,5 @@
 treasury:
-  threshold: 4.5  # Alert when 10Y yield drops below this percentage
+  threshold: 3.75  # Alert when 10Y yield drops below this percentage
   ticker: "^TNX"   # CBOE 10-Year Treasury Note Yield Index
 
 email:
